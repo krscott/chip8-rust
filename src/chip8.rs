@@ -62,11 +62,6 @@ pub struct Chip8 {
     /// Used to store memory addresses, so only lowest 12 bits are usually used.
     pub i: u16,
 
-    /// Instruction Flag Register
-    ///
-    /// Used by some instructions. Should not be used by program.
-    pub vf: u8,
-
     /// Delay Timer Register
     ///
     /// Decrements every tick (60 Hz) until reaching 0.
@@ -112,7 +107,6 @@ impl Chip8 {
             rng: StdRng::from_entropy(),
             v: [0; 0x10],
             i: 0,
-            vf: 0,
             dt: 0,
             st: 0,
             pc: 0,
@@ -137,11 +131,10 @@ impl Chip8 {
             .join(" ");
 
         format!(
-            "{:04X}: {:04X} I={:04X} VF={:X} Vx=[{}]",
+            "{:04X}: {:04X} I={:04X} Vx=[{}]",
             self.pc,
             self.mem_read_opcode(self.pc),
             self.i,
-            self.vf,
             vx_str
         )
     }
@@ -158,7 +151,6 @@ impl Chip8 {
         self.rng = SeedableRng::from_seed(RNG_SEED);
 
         self.i = 0;
-        self.vf = 0;
         self.dt = 0;
         self.st = 0;
         self.pc = ADDR_PROGRAM;
@@ -307,7 +299,7 @@ impl Chip8 {
             0x7 => {
                 // ADD Vx, kk: Vx = Vx + kk
 
-                self.v[x] += kk;
+                self.v[x] = self.v[x].wrapping_add(kk);
                 self.pc += 2;
 
                 Ok(())
@@ -345,41 +337,52 @@ impl Chip8 {
 
                     0x4 => {
                         // ADD Vx, Vy: Set Vx = Vx + Vy, set VF = carry
-                        let sum = u16::from(self.v[x]) + u16::from(self.v[y]);
-                        self.vf = if sum > 0xff { 1 } else { 0 };
-                        self.v[x] = (sum & 0xff) as u8;
+                        let (sum, ovf) = self.v[x].overflowing_add(self.v[y]);
+                        self.v[0xf] = if ovf { 1 } else { 0 };
+                        self.v[x] = sum;
+
                         self.pc += 2;
                         Ok(())
                     }
 
                     0x5 => {
                         // SUB Vx, Vy: Set Vx = Vx - Vy, set VF = NOT borrow
-                        self.vf = if self.v[x] > self.v[y] { 1 } else { 0 };
+
+                        // Note: VF is assigned first, so it could change Vx - Vy if x or y is F
+                        // If this doesn't matter, then we could use overflowing_sub() instead
+                        self.v[0xf] = if self.v[x] > self.v[y] { 1 } else { 0 };
                         self.v[x] = self.v[x].wrapping_sub(self.v[y]);
+
                         self.pc += 2;
                         Ok(())
                     }
 
                     0x6 => {
                         // SHR Vx: Set Vx = Vx >> 1, set VF = shifted-out bit
-                        self.vf = self.v[x] & 1;
+                        self.v[0xf] = self.v[x] & 1;
                         self.v[x] = self.v[x] >> 1;
+
                         self.pc += 2;
                         Ok(())
                     }
 
                     0x7 => {
                         // SUBN Vx, Vy: Set Vx = Vy - Vx, set VF = NOT borrow
-                        self.vf = if self.v[y] > self.v[x] { 1 } else { 0 };
+
+                        // Note: VF is assigned first, so it could change Vx - Vy if x or y is F
+                        // If this doesn't matter, then we could use overflowing_sub() instead
+                        self.v[0xf] = if self.v[y] > self.v[x] { 1 } else { 0 };
                         self.v[x] = self.v[y].wrapping_sub(self.v[x]);
+
                         self.pc += 2;
                         Ok(())
                     }
 
                     0xE => {
                         // SHL Vx: Set Vx = Vx << 1, set VF = shifted-out bit
-                        self.vf = self.v[x] & 0x80 >> 7;
+                        self.v[0xf] = self.v[x] & 0x80 >> 7;
                         self.v[x] = self.v[x] << 1;
+
                         self.pc += 2;
                         Ok(())
                     }
@@ -439,7 +442,7 @@ impl Chip8 {
                 let vy = usize::from(self.v[y]);
                 let i = usize::from(self.i);
 
-                self.vf = 0;
+                self.v[0xf] = 0;
 
                 for dy in 0..nibble {
                     let dy = usize::from(dy);
@@ -623,7 +626,7 @@ impl Chip8 {
         let idx = self.disp_coord_to_index(x, y);
 
         if self.display[idx] {
-            self.vf = 1;
+            self.v[0xf] = 1;
         }
 
         self.display[idx] = !self.display[idx];
