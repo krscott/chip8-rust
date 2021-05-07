@@ -1,8 +1,5 @@
-use std::sync::{Arc, Mutex};
-
 use crate::chip8::{self, Chip8};
-use crate::window::{self, WindowHandle};
-use minifb::{Key, WindowOptions};
+use minifb::{Key, Window, WindowOptions};
 
 const COLOR_ON: u32 = u32::MAX;
 const COLOR_OFF: u32 = 0;
@@ -11,8 +8,8 @@ const TITLE: &str = "Chip8 Rust Emulator";
 
 pub struct Emulator {
     pub cpu: Chip8,
-    pub window: WindowHandle,
-    pub display_buffer: Arc<Mutex<Vec<u32>>>,
+    pub window: Window,
+    pub display_buffer: Vec<u32>,
     pub paused: bool,
     pub closing: bool,
 }
@@ -31,14 +28,15 @@ impl Emulator {
             ..Default::default()
         };
 
-        let window = window::spawn(TITLE, width, height, window_options)?;
+        let mut window = Window::new(TITLE, width, height, window_options)?;
 
-        let display_buffer = Arc::new(Mutex::new(
-            (0..width * height)
-                .enumerate()
-                .map(|(i, _)| if i % 2 == 0 { u32::MAX } else { 0 })
-                .collect(),
-        ));
+        // Limit to max ~60 fps update rate
+        window.limit_update_rate(Some(std::time::Duration::from_micros(1_000_000 / 60)));
+
+        let display_buffer = (0..width * height)
+            .enumerate()
+            .map(|(i, _)| if i % 2 == 0 { u32::MAX } else { 0 })
+            .collect();
 
         Ok(Emulator {
             cpu,
@@ -64,20 +62,20 @@ impl Emulator {
     }
 
     fn read_inputs(&mut self) -> anyhow::Result<()> {
-        for key in self.window.get_keys()? {
+        for key in self.window.get_keys().unwrap_or_default() {
             match key {
                 Key::Escape => {
-                    self.quit()?;
+                    self.quit();
                 }
                 Key::Space => {
                     if self.paused {
-                        self.unpause()?;
+                        self.unpause();
                     } else {
-                        self.pause()?;
+                        self.pause();
                     }
                 }
                 Key::Enter => {
-                    self.pause()?;
+                    self.pause();
                     self.cpu_step()?;
                 }
 
@@ -124,7 +122,7 @@ impl Emulator {
                     }
                 }
 
-                self.pause()?;
+                self.pause();
             }
         }
 
@@ -132,46 +130,38 @@ impl Emulator {
     }
 
     fn update_buffer(&mut self) -> anyhow::Result<()> {
-        {
-            let mut window_buffer = self.display_buffer.lock().unwrap();
-
-            for (i, b) in window_buffer.iter_mut().enumerate() {
-                *b = match self.cpu.display[i] {
-                    true => COLOR_ON,
-                    false => COLOR_OFF,
-                };
-            }
+        for (i, b) in self.display_buffer.iter_mut().enumerate() {
+            *b = match self.cpu.display[i] {
+                true => COLOR_ON,
+                false => COLOR_OFF,
+            };
         }
 
-        self.window.update_buffer(self.display_buffer.clone())?;
+        if self.window.is_open() {
+            self.window.update_with_buffer(
+                &self.display_buffer,
+                self.cpu.display_width(),
+                self.cpu.display_height(),
+            )?;
+        } else {
+            self.quit();
+        }
 
         Ok(())
     }
 
-    pub fn pause(&mut self) -> anyhow::Result<()> {
+    pub fn pause(&mut self) {
         self.paused = true;
-        self.window.set_title(format!("PAUSED - {}", TITLE))?;
-
-        Ok(())
+        self.window.set_title(&format!("PAUSED - {}", TITLE));
     }
 
-    pub fn unpause(&mut self) -> anyhow::Result<()> {
+    pub fn unpause(&mut self) {
         self.paused = true;
-        self.window.set_title(TITLE.into())?;
-
-        Ok(())
+        self.window.set_title(TITLE.into());
     }
 
-    pub fn quit(&mut self) -> anyhow::Result<()> {
+    pub fn quit(&mut self) {
         self.closing = true;
-        self.window.set_title(format!("CLOSING - {}", TITLE))?;
-
-        Ok(())
-    }
-
-    pub fn close(self) -> anyhow::Result<()> {
-        self.window.close()?;
-
-        Ok(())
+        self.window.set_title(&format!("CLOSING - {}", TITLE));
     }
 }

@@ -1,6 +1,5 @@
 mod chip8;
 mod emu;
-mod window;
 
 use std::{fs::File, io::Read};
 
@@ -19,6 +18,5 @@ fn main() -> anyhow::Result<()> {
         emu.step()?;
     }
 
-    emu.close()?;
     Ok(())
 }
