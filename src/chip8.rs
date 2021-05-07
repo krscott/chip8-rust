@@ -180,13 +180,14 @@ impl Chip8 {
     }
 
     fn execute_opcode(&mut self, opcode: u16) -> Result<(), Chip8Panic> {
+        let upper_nibble = (opcode & 0xf000) >> 12;
         let nnn = opcode & 0x0fff;
-        let x = usize::from((opcode & 0x0f00).overflowing_shr(16).0);
-        let y = usize::from(opcode & 0x00f0 >> 8);
+        let x = usize::from((opcode & 0x0f00) >> 8);
+        let y = usize::from((opcode & 0x00f0) >> 4);
         let kk = (opcode & 0x00ff) as u8;
         let nibble = opcode & 0x000f;
 
-        match opcode.overflowing_shr(24).0 {
+        match upper_nibble {
             0x0 => {
                 if opcode == 0x00E0 {
                     // CLS: Clear the display

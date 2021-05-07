@@ -186,7 +186,7 @@ impl Emulator {
 fn main() -> anyhow::Result<()> {
     let mut emu = Emulator::new()?;
 
-    let f = File::open("roms/BLINKY")?;
+    let f = File::open("roms/UFO")?;
     let data: Vec<u8> = f.bytes().filter_map(|r| r.ok()).collect();
 
     emu.cpu.load_rom(&data)?;
