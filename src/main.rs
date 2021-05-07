@@ -14,7 +14,14 @@ fn main() -> anyhow::Result<()> {
     emu.cpu.load_rom(&data)?;
     // emu.pause()?;
 
+    let mut last_pc = u16::MAX;
+
     while !emu.closing {
+        if last_pc != emu.cpu.pc {
+            last_pc = emu.cpu.pc;
+            println!("{}", emu.cpu.status());
+        }
+
         emu.step()?;
     }
 

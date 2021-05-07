@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::chip8::{self, Chip8};
 use minifb::{Key, Window, WindowOptions};
 
@@ -10,6 +12,7 @@ pub struct Emulator {
     pub cpu: Chip8,
     pub window: Window,
     pub display_buffer: Vec<u32>,
+    pub key_map: HashMap<Key, u8>,
     pub paused: bool,
     pub closing: bool,
 }
@@ -42,6 +45,7 @@ impl Emulator {
             cpu,
             window,
             display_buffer,
+            key_map: default_key_map(),
             paused: false,
             closing: false,
         })
@@ -62,7 +66,12 @@ impl Emulator {
     }
 
     fn read_inputs(&mut self) -> anyhow::Result<()> {
-        for key in self.window.get_keys().unwrap_or_default() {
+        // Read Key Presses
+        for key in self
+            .window
+            .get_keys_pressed(minifb::KeyRepeat::Yes)
+            .unwrap_or_default()
+        {
             match key {
                 Key::Escape => {
                     self.quit();
@@ -79,24 +88,14 @@ impl Emulator {
                     self.cpu_step()?;
                 }
 
-                Key::X => self.cpu.set_key(0x0),
-                Key::Key1 => self.cpu.set_key(0x1),
-                Key::Key2 => self.cpu.set_key(0x2),
-                Key::Key3 => self.cpu.set_key(0x3),
-                Key::Q => self.cpu.set_key(0x4),
-                Key::W => self.cpu.set_key(0x5),
-                Key::E => self.cpu.set_key(0x6),
-                Key::A => self.cpu.set_key(0x7),
-                Key::S => self.cpu.set_key(0x8),
-                Key::D => self.cpu.set_key(0x9),
-                Key::Z => self.cpu.set_key(0xA),
-                Key::C => self.cpu.set_key(0xB),
-                Key::Key4 => self.cpu.set_key(0xC),
-                Key::R => self.cpu.set_key(0xD),
-                Key::F => self.cpu.set_key(0xE),
-                Key::V => self.cpu.set_key(0xF),
-
                 _ => {}
+            }
+        }
+
+        // Read Mapped Keys
+        for key in self.window.get_keys().unwrap_or_default() {
+            if let Some(code) = self.key_map.get(&key) {
+                self.cpu.set_key(*code);
             }
         }
 
@@ -164,4 +163,27 @@ impl Emulator {
         self.closing = true;
         self.window.set_title(&format!("CLOSING - {}", TITLE));
     }
+}
+
+fn default_key_map() -> HashMap<Key, u8> {
+    let mut key_map = HashMap::new();
+
+    key_map.insert(Key::X, 0x0);
+    key_map.insert(Key::Key1, 0x1);
+    key_map.insert(Key::Key2, 0x2);
+    key_map.insert(Key::Key3, 0x3);
+    key_map.insert(Key::Q, 0x4);
+    key_map.insert(Key::W, 0x5);
+    key_map.insert(Key::E, 0x6);
+    key_map.insert(Key::A, 0x7);
+    key_map.insert(Key::S, 0x8);
+    key_map.insert(Key::D, 0x9);
+    key_map.insert(Key::Z, 0xA);
+    key_map.insert(Key::C, 0xB);
+    key_map.insert(Key::Key4, 0xC);
+    key_map.insert(Key::R, 0xD);
+    key_map.insert(Key::F, 0xE);
+    key_map.insert(Key::V, 0xF);
+
+    key_map
 }

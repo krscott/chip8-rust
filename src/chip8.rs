@@ -128,6 +128,24 @@ impl Chip8 {
         chip8
     }
 
+    pub fn status(&self) -> String {
+        let vx_str = self
+            .v
+            .iter()
+            .map(|x| format!("{:02X}", *x))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        format!(
+            "{:04X}: {:04X} I={:04X} VF={:X} Vx=[{}]",
+            self.pc,
+            self.mem_read_opcode(self.pc),
+            self.i,
+            self.vf,
+            vx_str
+        )
+    }
+
     pub fn display_width(&self) -> usize {
         DISPLAY_WIDTH
     }
