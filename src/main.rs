@@ -7,8 +7,10 @@ use chip8::Chip8;
 use minifb::{Key, WindowOptions};
 
 fn main() -> anyhow::Result<()> {
-    let width = 64;
-    let height = 32;
+    let cpu = Chip8::new();
+
+    let width = cpu.display_width();
+    let height = cpu.display_height();
 
     let window_options = WindowOptions {
         resize: true,
@@ -25,8 +27,6 @@ fn main() -> anyhow::Result<()> {
             .map(|(i, _)| if i % 2 == 0 { u32::MAX } else { 0 })
             .collect(),
     ));
-
-    let cpu = Chip8::default();
 
     'outer: loop {
         window.update_buffer(buffer.clone())?;
