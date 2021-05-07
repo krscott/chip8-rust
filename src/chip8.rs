@@ -4,6 +4,7 @@ use thiserror::Error;
 
 const DISPLAY_WIDTH: usize = 64;
 const DISPLAY_HEIGHT: usize = 32;
+const DISPLAY_BUFFER_LENGTH: usize = DISPLAY_WIDTH * DISPLAY_HEIGHT;
 
 // Arbitrary bytes
 const RNG_SEED: [u8; 32] = [
@@ -13,6 +14,8 @@ const RNG_SEED: [u8; 32] = [
 
 const ADDR_PROGRAM: u16 = 0x200;
 
+const ADDR_CHARACTER: u16 = 0;
+const SIZE_CHARACTER: u16 = 5;
 const CHARACTER_ROM: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // '0'
     0x20, 0x60, 0x20, 0x20, 0x70, // '1'
@@ -95,7 +98,12 @@ pub struct Chip8 {
     ram: [u8; 0x1000],
 
     /// Display 1-bit Buffer
-    display: [bool; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+    display: [bool; DISPLAY_BUFFER_LENGTH],
+
+    /// Input keys
+    ///
+    /// Hex input keys '0' to 'F'
+    keys: [bool; 0x10],
 }
 
 impl Chip8 {
@@ -111,7 +119,8 @@ impl Chip8 {
             sp: 0,
             stack: [0; 0x10],
             ram: [0; 0x1000],
-            display: [false; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+            display: [false; DISPLAY_BUFFER_LENGTH],
+            keys: [false; 0x10],
         };
 
         chip8.reset();
@@ -134,10 +143,6 @@ impl Chip8 {
     pub fn reset(&mut self) {
         self.rng = SeedableRng::from_seed(RNG_SEED);
 
-        for val in self.v.iter_mut() {
-            *val = 0;
-        }
-
         self.i = 0;
         self.vf = 0;
         self.dt = 0;
@@ -145,19 +150,24 @@ impl Chip8 {
         self.pc = ADDR_PROGRAM;
         self.sp = 0;
 
-        for val in self.stack.iter_mut() {
-            *val = 0;
-        }
+        fill_array(&mut self.v, 0);
+        fill_array(&mut self.stack, 0);
+        fill_array(&mut self.display, false);
+        fill_array(&mut self.keys, false);
 
-        for val in self.ram.iter_mut() {
-            *val = 0;
-        }
+        fill_array(&mut self.ram, 0);
+        self.mem_write_slice(ADDR_CHARACTER, &CHARACTER_ROM)
+            .unwrap();
+    }
 
-        for val in self.display.iter_mut() {
-            *val = false;
+    pub fn set_key(&mut self, key: u8, is_pressed: bool) -> anyhow::Result<()> {
+        if key > 0xf {
+            Err(anyhow!("Key out of range"))
+        } else {
+            let key: usize = key.into();
+            self.keys[key] = is_pressed;
+            Ok(())
         }
-
-        self.mem_write_slice(0, &CHARACTER_ROM).unwrap();
     }
 
     pub fn step(&mut self) -> Result<(), Chip8Panic> {
@@ -173,6 +183,8 @@ impl Chip8 {
 
         self.execute_opcode(opcode)?;
 
+        fill_array(&mut self.keys, false);
+
         Ok(())
     }
 
@@ -181,6 +193,7 @@ impl Chip8 {
         let x = usize::from(opcode & 0x0f00 >> 16);
         let y = usize::from(opcode & 0x00f0 >> 8);
         let kk = (opcode & 0x00ff) as u8;
+        let nibble = opcode & 0x000f;
 
         match opcode >> 24 {
             0x0 => {
@@ -258,15 +271,18 @@ impl Chip8 {
             }
 
             0x5 => {
-                // SE Vx, Vy: Skip next instruction if Vx == Vy
+                if nibble == 0 {
+                    // SE Vx, Vy: Skip next instruction if Vx == Vy
+                    if self.v[x] == self.v[y] {
+                        self.pc += 4;
+                    } else {
+                        self.pc += 2;
+                    }
 
-                if self.v[x] == self.v[y] {
-                    self.pc += 4;
+                    Ok(())
                 } else {
-                    self.pc += 2;
+                    Err(Chip8Panic::UnknownOpCode)
                 }
-
-                Ok(())
             }
 
             0x6 => {
@@ -288,7 +304,7 @@ impl Chip8 {
             }
 
             0x8 => {
-                match opcode & 0x000f {
+                match nibble {
                     0x0 => {
                         // LD Vx, Vy: Set Vx = Vy
                         self.v[x] = self.v[y];
@@ -363,15 +379,19 @@ impl Chip8 {
             }
 
             0x9 => {
-                // SNE Vx, Vy: Skip next instruction if Vx != Vy
+                if nibble == 0 {
+                    // SNE Vx, Vy: Skip next instruction if Vx != Vy
 
-                if self.v[x] != self.v[y] {
-                    self.pc += 4;
+                    if self.v[x] != self.v[y] {
+                        self.pc += 4;
+                    } else {
+                        self.pc += 2;
+                    }
+
+                    Ok(())
                 } else {
-                    self.pc += 2;
+                    Err(Chip8Panic::UnknownOpCode)
                 }
-
-                Ok(())
             }
 
             0xA => {
@@ -392,16 +412,218 @@ impl Chip8 {
             }
 
             0xC => {
-                // RND Vx, kk: Random byte
+                // RND Vx, kk: Random byte AND kk
 
-                self.v[x] = (self.rng.next_u32() & 0xf) as u8;
+                self.v[x] = kk & ((self.rng.next_u32() & 0xff) as u8);
                 self.pc += 2;
 
                 Ok(())
             }
 
+            0xD => {
+                // DRW Vx, Vy, nibble:
+                // Display n-byte sprite starting at memory location I at (Vx, Vy),
+                // set VF = collision.
+
+                let vx = usize::from(self.v[x]);
+                let vy = usize::from(self.v[y]);
+                let i = usize::from(self.i);
+
+                self.vf = 0;
+
+                for dy in 0..nibble {
+                    let dy = usize::from(dy);
+
+                    self.disp_toggle_sprite_row(vx, vy + dy, self.ram[i + dy]);
+                }
+
+                self.pc += 2;
+
+                Ok(())
+            }
+
+            0xE => {
+                let key_idx = usize::from(self.v[x] & 0xf);
+                let key_pressed = self.keys[key_idx];
+
+                match kk {
+                    0x9E => {
+                        // SKP Vx: Skip next instruction if key with value of Vx is pressed
+
+                        if key_pressed {
+                            self.pc += 4;
+                        } else {
+                            self.pc += 2;
+                        }
+
+                        Ok(())
+                    }
+
+                    0xA1 => {
+                        // SKNP Vx: Skip next instruction if key with value of Vx is not pressed
+
+                        if !key_pressed {
+                            self.pc += 4;
+                        } else {
+                            self.pc += 2;
+                        }
+
+                        Ok(())
+                    }
+
+                    _ => Err(Chip8Panic::UnknownOpCode),
+                }
+            }
+
+            0xF => {
+                match kk {
+                    0x07 => {
+                        // LD Vx, DT: set Vx = DT
+
+                        self.v[x] = self.dt;
+
+                        self.pc += 2;
+
+                        Ok(())
+                    }
+
+                    0x0A => {
+                        // LD Vx, K: Wait for a key press, store value of key in Vx
+
+                        let key_pressed = self
+                            .keys
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, is_pressed)| **is_pressed)
+                            .map(|(i, _)| i)
+                            .next();
+
+                        if let Some(key_pressed) = key_pressed {
+                            self.v[x] = key_pressed as u8;
+                            self.pc += 2;
+                        }
+
+                        Ok(())
+                    }
+
+                    0x15 => {
+                        // LD DT, Vx: Set DT = Vx
+
+                        self.dt = self.v[x];
+
+                        self.pc += 2;
+
+                        Ok(())
+                    }
+
+                    0x18 => {
+                        // LD ST, Vx: Set ST = Vx
+
+                        self.st = self.v[x];
+
+                        self.pc += 2;
+
+                        Ok(())
+                    }
+
+                    0x1E => {
+                        // ADD I, Vx: Set I = I + Vx
+
+                        self.i += u16::from(self.v[x]);
+
+                        self.pc += 2;
+
+                        Ok(())
+                    }
+
+                    0x29 => {
+                        // LD F, Vx: Set I = location of sprite for digit Vx
+
+                        let char = u16::from(self.v[x] & 0x0f);
+
+                        self.i = ADDR_CHARACTER + SIZE_CHARACTER * char;
+
+                        self.pc += 2;
+
+                        Ok(())
+                    }
+
+                    0x33 => {
+                        // LD B, Vx: Store BCD repr of Vx in mem locations I, I+1, I+2
+
+                        let i = usize::from(self.i);
+                        let vx = self.v[x];
+
+                        let hundreds = vx / 100 % 10;
+                        let tens = vx / 10 % 10;
+                        let ones = vx / 1 % 10;
+
+                        self.ram[i] = hundreds;
+                        self.ram[i + 1] = tens;
+                        self.ram[i + 2] = ones;
+
+                        self.pc += 2;
+
+                        Ok(())
+                    }
+
+                    0x55 => {
+                        // LD [I], Vx: Store registers V0 through Vx in memory starting at I
+
+                        for di in 0_usize..=0xf {
+                            let addr = (usize::from(self.i) + di) % self.ram.len();
+                            self.ram[usize::from(self.i) + di] = self.v[di];
+                        }
+
+                        self.pc += 2;
+
+                        Ok(())
+                    }
+
+                    0x65 => {
+                        // LD Vx, [I]: Read registers V0 through Vx from memory starting at I
+
+                        for di in 0_usize..=0xf {
+                            let addr = (usize::from(self.i) + di) % self.ram.len();
+                            self.v[di] = self.ram[addr];
+                        }
+
+                        self.pc += 2;
+
+                        Ok(())
+                    }
+
+                    _ => Err(Chip8Panic::UnknownOpCode),
+                }
+            }
+
             _ => Err(Chip8Panic::UnknownOpCode),
         }
+    }
+
+    fn disp_toggle_sprite_row(&mut self, x: usize, y: usize, s: u8) {
+        for i in (0..8).rev() {
+            if (s >> i) & 1 == 1 {
+                self.disp_toggle_coord(x + 7 - i, y);
+            }
+        }
+    }
+
+    fn disp_toggle_coord(&mut self, x: usize, y: usize) {
+        let idx = self.disp_coord_to_index(x, y);
+
+        if self.display[idx] {
+            self.vf = 1;
+        }
+
+        self.display[idx] = !self.display[idx];
+    }
+
+    fn disp_coord_to_index(&self, mut x: usize, mut y: usize) -> usize {
+        x = x % self.display_width();
+        y = y % self.display_height();
+
+        y * self.display_width() + x
     }
 
     fn mem_read_opcode(&self, addr: u16) -> u16 {
@@ -433,5 +655,11 @@ impl Chip8 {
     fn mem_read_byte(&self, addr: u16) -> u8 {
         let addr = usize::from(addr) % self.ram.len();
         self.ram[addr]
+    }
+}
+
+fn fill_array<T: Copy>(a: &mut [T], val: T) {
+    for x in a.iter_mut() {
+        *x = val;
     }
 }
