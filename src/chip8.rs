@@ -197,6 +197,10 @@ impl Chip8 {
         let kk = (opcode & 0x00ff) as u8;
         let nibble = opcode & 0x000f;
 
+        // Compatibility modes
+        let xy = x;
+        // let xy = y;
+
         match upper_nibble {
             0x0 => {
                 if opcode == 0x00E0 {
@@ -323,14 +327,14 @@ impl Chip8 {
 
                     0x2 => {
                         // AND Vx, Vy: Set Vx = Vx AND Vy
-                        self.v[x] = self.v[y] & self.v[y];
+                        self.v[x] = self.v[x] & self.v[y];
                         self.pc += 2;
                         Ok(())
                     }
 
                     0x3 => {
                         // XOR Vx, Vy: Set Vx = Vx XOR Vy
-                        self.v[x] = self.v[y] ^ self.v[y];
+                        self.v[x] = self.v[x] ^ self.v[y];
                         self.pc += 2;
                         Ok(())
                     }
@@ -358,9 +362,10 @@ impl Chip8 {
                     }
 
                     0x6 => {
-                        // SHR Vx: Set Vx = Vx >> 1, set VF = shifted-out bit
-                        self.v[0xf] = self.v[x] & 1;
-                        self.v[x] = self.v[x] >> 1;
+                        // SHR Vx|Vy: Set Vx = Vx >> 1, set VF = shifted-out bit
+
+                        self.v[0xf] = self.v[xy] & 1;
+                        self.v[x] = self.v[xy] >> 1;
 
                         self.pc += 2;
                         Ok(())
@@ -379,9 +384,10 @@ impl Chip8 {
                     }
 
                     0xE => {
-                        // SHL Vx: Set Vx = Vx << 1, set VF = shifted-out bit
-                        self.v[0xf] = self.v[x] & 0x80 >> 7;
-                        self.v[x] = self.v[x] << 1;
+                        // SHL Vx|Vy: Set Vx = Vx << 1, set VF = shifted-out bit
+
+                        self.v[0xf] = if self.v[xy] & 0x80 == 0 { 0 } else { 1 };
+                        self.v[x] = self.v[xy] << 1;
 
                         self.pc += 2;
                         Ok(())
