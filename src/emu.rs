@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{Duration, SystemTime},
+};
 
 use crate::chip8::{self, Chip8};
 use minifb::{Key, Window, WindowOptions};
@@ -8,13 +11,19 @@ const COLOR_OFF: u32 = 0;
 
 const TITLE: &str = "Chip8 Rust Emulator";
 
+const TIMER_DURATION: Duration = Duration::from_micros(1_000_000 / 60);
+const DEFAULT_CLOCK_S: f64 = 1. / 1_000.;
+
 pub struct Emulator {
     pub cpu: Chip8,
     pub window: Window,
     pub display_buffer: Vec<u32>,
     pub key_map: HashMap<Key, u8>,
+    pub clock_period: Duration,
+    pub timer_time: SystemTime,
     pub paused: bool,
     pub closing: bool,
+    pub debug_print: bool,
 }
 
 impl Emulator {
@@ -31,10 +40,10 @@ impl Emulator {
             ..Default::default()
         };
 
-        let mut window = Window::new(TITLE, width, height, window_options)?;
+        let window = Window::new(TITLE, width, height, window_options)?;
 
         // Limit to max ~60 fps update rate
-        window.limit_update_rate(Some(std::time::Duration::from_micros(1_000_000 / 60)));
+        // window.limit_update_rate(Some(std::time::Duration::from_micros(1_000_000 / 60)));
 
         let display_buffer = (0..width * height)
             .enumerate()
@@ -46,8 +55,11 @@ impl Emulator {
             window,
             display_buffer,
             key_map: default_key_map(),
+            clock_period: Duration::from_secs_f64(DEFAULT_CLOCK_S),
+            timer_time: SystemTime::now(),
             paused: false,
             closing: false,
+            debug_print: false,
         })
     }
 
@@ -57,10 +69,33 @@ impl Emulator {
         }
 
         if !self.paused && !self.closing {
+            if self.debug_print {
+                println!("{}", self.cpu.status());
+            }
+
             self.cpu_step()?;
         }
 
-        self.update_buffer()?;
+        if self.timer_time.elapsed()? > TIMER_DURATION {
+            self.timer_time += TIMER_DURATION;
+
+            self.cpu.timer_tick();
+            self.update_window()?;
+
+            // Catch up clock
+            let mut slip_count = 0;
+            while self.timer_time.elapsed()? > TIMER_DURATION {
+                slip_count += 1;
+                self.timer_time += TIMER_DURATION;
+            }
+            if slip_count > 0 {
+                if self.debug_print {
+                    println!("Timer slipped {} ticks", slip_count);
+                }
+            }
+        }
+
+        spin_sleep::sleep(self.clock_period);
 
         Ok(())
     }
@@ -128,20 +163,26 @@ impl Emulator {
         Ok(())
     }
 
-    fn update_buffer(&mut self) -> anyhow::Result<()> {
-        for (i, b) in self.display_buffer.iter_mut().enumerate() {
-            *b = match self.cpu.display[i] {
-                true => COLOR_ON,
-                false => COLOR_OFF,
-            };
-        }
-
+    fn update_window(&mut self) -> anyhow::Result<()> {
         if self.window.is_open() {
-            self.window.update_with_buffer(
-                &self.display_buffer,
-                self.cpu.display_width(),
-                self.cpu.display_height(),
-            )?;
+            if self.cpu.display_dirty {
+                self.cpu.display_dirty = false;
+
+                for (i, b) in self.display_buffer.iter_mut().enumerate() {
+                    *b = match self.cpu.display[i] {
+                        true => COLOR_ON,
+                        false => COLOR_OFF,
+                    };
+                }
+
+                self.window.update_with_buffer(
+                    &self.display_buffer,
+                    self.cpu.display_width(),
+                    self.cpu.display_height(),
+                )?;
+            } else {
+                self.window.update();
+            }
         } else {
             self.quit();
         }

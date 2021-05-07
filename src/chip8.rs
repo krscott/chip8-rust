@@ -99,6 +99,11 @@ pub struct Chip8 {
     ///
     /// Hex input keys '0' to 'F'
     pub keys: [bool; 0x10],
+
+    /// Display dirty flag
+    ///
+    /// Set when the display buffer has changed.
+    pub display_dirty: bool,
 }
 
 impl Chip8 {
@@ -115,6 +120,7 @@ impl Chip8 {
             ram: [0; 0x1000],
             display: [false; DISPLAY_BUFFER_LENGTH],
             keys: [false; 0x10],
+            display_dirty: false,
         };
 
         chip8.reset();
@@ -164,6 +170,8 @@ impl Chip8 {
         fill_array(&mut self.ram, 0);
         self.mem_write_slice(ADDR_CHARACTER, &CHARACTER_ROM)
             .unwrap();
+
+        self.display_dirty = true;
     }
 
     pub fn set_key(&mut self, key: u8) {
@@ -172,14 +180,6 @@ impl Chip8 {
     }
 
     pub fn step(&mut self) -> Result<(), Chip8Panic> {
-        if self.dt > 0 {
-            self.dt -= 1;
-        }
-
-        if self.st > 0 {
-            self.st -= 1;
-        }
-
         let opcode = self.mem_read_opcode(self.pc);
 
         self.execute_opcode(opcode)?;
@@ -187,6 +187,16 @@ impl Chip8 {
         fill_array(&mut self.keys, false);
 
         Ok(())
+    }
+
+    pub fn timer_tick(&mut self) {
+        if self.dt > 0 {
+            self.dt -= 1;
+        }
+
+        if self.st > 0 {
+            self.st -= 1;
+        }
     }
 
     fn execute_opcode(&mut self, opcode: u16) -> Result<(), Chip8Panic> {
@@ -206,9 +216,8 @@ impl Chip8 {
                 if opcode == 0x00E0 {
                     // CLS: Clear the display
 
-                    for val in self.display.iter_mut() {
-                        *val = false;
-                    }
+                    fill_array(&mut self.display, false);
+                    self.display_dirty = true;
 
                     self.pc += 2;
 
@@ -636,6 +645,8 @@ impl Chip8 {
         }
 
         self.display[idx] = !self.display[idx];
+
+        self.display_dirty = true;
     }
 
     fn disp_coord_to_index(&self, mut x: usize, mut y: usize) -> usize {
