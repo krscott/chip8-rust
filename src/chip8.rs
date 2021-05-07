@@ -50,60 +50,60 @@ pub enum Chip8Panic {
 #[derive(Debug, Clone)]
 pub struct Chip8 {
     /// Deterministic Random Number Generator
-    rng: StdRng,
+    pub rng: StdRng,
 
     /// General Purpose Registers
     ///
     /// V0 ~ VF
-    v: [u8; 0x10],
+    pub v: [u8; 0x10],
 
     /// Memory Address Register
     ///
     /// Used to store memory addresses, so only lowest 12 bits are usually used.
-    i: u16,
+    pub i: u16,
 
     /// Instruction Flag Register
     ///
     /// Used by some instructions. Should not be used by program.
-    vf: u8,
+    pub vf: u8,
 
     /// Delay Timer Register
     ///
     /// Decrements every tick (60 Hz) until reaching 0.
     /// The delay timer is active whenever DT is non-zero.
-    dt: u8,
+    pub dt: u8,
 
     /// Sound Timer Register
     ///
     /// Decrements every tick (60 Hz) until reaching 0.
     /// The buzzer will sound whenever ST is non-zero.
-    st: u8,
+    pub st: u8,
 
     /// Program Counter
     ///
     /// Stores the currently executing address.
-    pc: u16,
+    pub pc: u16,
 
     /// Stack Pointer
     ///
     /// Points to the topmost level of the stack.
-    sp: u8,
+    pub sp: u8,
 
     /// Stack
     ///
     /// Array of subroutine return addresses.
-    stack: [u16; 0x10],
+    pub stack: [u16; 0x10],
 
     /// RAM
-    ram: [u8; 0x1000],
+    pub ram: [u8; 0x1000],
 
     /// Display 1-bit Buffer
-    display: [bool; DISPLAY_BUFFER_LENGTH],
+    pub display: [bool; DISPLAY_BUFFER_LENGTH],
 
     /// Input keys
     ///
     /// Hex input keys '0' to 'F'
-    keys: [bool; 0x10],
+    pub keys: [bool; 0x10],
 }
 
 impl Chip8 {
@@ -136,10 +136,6 @@ impl Chip8 {
         DISPLAY_HEIGHT
     }
 
-    pub fn display_buffer(&self) -> &[bool] {
-        &self.display
-    }
-
     pub fn reset(&mut self) {
         self.rng = SeedableRng::from_seed(RNG_SEED);
 
@@ -160,14 +156,9 @@ impl Chip8 {
             .unwrap();
     }
 
-    pub fn set_key(&mut self, key: u8, is_pressed: bool) -> anyhow::Result<()> {
-        if key > 0xf {
-            Err(anyhow!("Key out of range"))
-        } else {
-            let key: usize = key.into();
-            self.keys[key] = is_pressed;
-            Ok(())
-        }
+    pub fn set_key(&mut self, key: u8) {
+        let key = (key & 0xf) as usize;
+        self.keys[key] = true;
     }
 
     pub fn step(&mut self) -> Result<(), Chip8Panic> {
@@ -190,12 +181,12 @@ impl Chip8 {
 
     fn execute_opcode(&mut self, opcode: u16) -> Result<(), Chip8Panic> {
         let nnn = opcode & 0x0fff;
-        let x = usize::from(opcode & 0x0f00 >> 16);
+        let x = usize::from((opcode & 0x0f00).overflowing_shr(16).0);
         let y = usize::from(opcode & 0x00f0 >> 8);
         let kk = (opcode & 0x00ff) as u8;
         let nibble = opcode & 0x000f;
 
-        match opcode >> 24 {
+        match opcode.overflowing_shr(24).0 {
             0x0 => {
                 if opcode == 0x00E0 {
                     // CLS: Clear the display
@@ -572,7 +563,7 @@ impl Chip8 {
 
                         for di in 0_usize..=0xf {
                             let addr = (usize::from(self.i) + di) % self.ram.len();
-                            self.ram[usize::from(self.i) + di] = self.v[di];
+                            self.ram[addr] = self.v[di];
                         }
 
                         self.pc += 2;
@@ -626,15 +617,21 @@ impl Chip8 {
         y * self.display_width() + x
     }
 
-    fn mem_read_opcode(&self, addr: u16) -> u16 {
+    pub fn mem_read_opcode(&self, addr: u16) -> u16 {
         let msb: u16 = self.mem_read_byte(addr).into();
         let lsb: u16 = self.mem_read_byte(addr + 1).into();
 
         msb << 8 | lsb
     }
 
+    pub fn load_rom(&mut self, data: &[u8]) -> anyhow::Result<()> {
+        self.mem_write_slice(ADDR_PROGRAM, data)?;
+
+        Ok(())
+    }
+
     fn mem_write_slice(&mut self, start: u16, slice: &[u8]) -> anyhow::Result<()> {
-        let start: usize = start.into();
+        let start = usize::from(start);
 
         if start + slice.len() >= self.ram.len() {
             return Err(anyhow!("mem_insert out-of-bounds"));
@@ -647,10 +644,10 @@ impl Chip8 {
         Ok(())
     }
 
-    fn mem_write_byte(&mut self, addr: u16, val: u8) {
-        let addr = usize::from(addr) % self.ram.len();
-        self.ram[addr] = val;
-    }
+    // fn mem_write_byte(&mut self, addr: u16, val: u8) {
+    //     let addr = usize::from(addr) % self.ram.len();
+    //     self.ram[addr] = val;
+    // }
 
     fn mem_read_byte(&self, addr: u16) -> u8 {
         let addr = usize::from(addr) % self.ram.len();

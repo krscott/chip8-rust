@@ -10,6 +10,7 @@ enum WindowCmd {
     UpdateBuffer(Arc<Mutex<Vec<u32>>>),
     PollKeys,
     Close,
+    SetTitle(String),
 }
 
 pub struct WindowHandle {
@@ -19,6 +20,11 @@ pub struct WindowHandle {
 }
 
 impl WindowHandle {
+    pub fn set_title(&self, title: String) -> anyhow::Result<()> {
+        self.cmd_tx.send(WindowCmd::SetTitle(title))?;
+        Ok(())
+    }
+
     pub fn update(&self) -> anyhow::Result<()> {
         self.cmd_tx.send(WindowCmd::Update)?;
         Ok(())
@@ -74,6 +80,7 @@ pub fn spawn<S: Into<String>>(
                     WindowCmd::Close => {
                         break;
                     }
+                    WindowCmd::SetTitle(title) => window.set_title(&title),
                 },
             }
         }
