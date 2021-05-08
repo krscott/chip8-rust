@@ -1,5 +1,6 @@
 mod chip8;
 mod emu;
+mod window;
 
 use std::{fs::File, io::Read, path::PathBuf, time::Duration};
 use structopt::StructOpt;
@@ -38,6 +39,8 @@ fn main() -> anyhow::Result<()> {
     while !emu.closing {
         emu.step()?;
     }
+
+    emu.close();
 
     Ok(())
 }
