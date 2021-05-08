@@ -599,7 +599,7 @@ impl Chip8 {
                     0x55 => {
                         // LD [I], Vx: Store registers V0 through Vx in memory starting at I
 
-                        for di in 0_usize..=0xf {
+                        for di in 0_usize..=usize::from(x) {
                             let addr = (usize::from(self.i) + di) % self.ram.len();
                             self.ram[addr] = self.v[di];
                         }
@@ -612,7 +612,7 @@ impl Chip8 {
                     0x65 => {
                         // LD Vx, [I]: Read registers V0 through Vx from memory starting at I
 
-                        for di in 0_usize..=0xf {
+                        for di in 0_usize..=usize::from(x) {
                             let addr = (usize::from(self.i) + di) % self.ram.len();
                             self.v[di] = self.ram[addr];
                         }
