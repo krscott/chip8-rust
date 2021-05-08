@@ -1,4 +1,5 @@
 mod chip8;
+mod disasm;
 mod emu;
 mod window;
 
@@ -17,30 +18,39 @@ struct Opt {
 
     #[structopt(short, long, help = "Clock speed (Hz)")]
     clock: Option<f64>,
+
+    #[structopt(short, long, help = "Disassemble program and exit")]
+    disassemble: bool,
 }
 
 fn main() -> anyhow::Result<()> {
     let opt = Opt::from_args();
 
-    let mut emu = Emulator::new()?;
-
-    emu.debug_print = opt.verbose;
-
-    if let Some(clock) = opt.clock {
-        emu.clock_period = Some(Duration::from_secs_f64(1. / clock));
-    }
-
     let f = File::open(&opt.file)?;
-    let data: Vec<u8> = f.bytes().filter_map(|r| r.ok()).collect();
+    let program_rom: Vec<u8> = f.bytes().filter_map(|r| r.ok()).collect();
 
-    emu.cpu.load_rom(&data)?;
-    // emu.pause()?;
+    if opt.disassemble {
+        for line in disasm::disassemble(&program_rom, 0x200) {
+            println!("{}", line);
+        }
+    } else {
+        let mut emu = Emulator::new()?;
 
-    while !emu.closing {
-        emu.step()?;
+        emu.debug_print = opt.verbose;
+
+        if let Some(clock) = opt.clock {
+            emu.clock_period = Some(Duration::from_secs_f64(1. / clock));
+        }
+
+        emu.cpu.load_rom(&program_rom)?;
+        // emu.pause()?;
+
+        while !emu.closing {
+            emu.step()?;
+        }
+
+        emu.close();
     }
-
-    emu.close();
 
     Ok(())
 }
