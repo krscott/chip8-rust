@@ -47,8 +47,8 @@ fn main() -> anyhow::Result<()> {
             };
         }
 
-        emu.cpu.load_rom(&program_rom)?;
-        // emu.pause()?;
+        emu.rom = program_rom;
+        emu.reset()?;
 
         while !emu.closing {
             emu.step()?;

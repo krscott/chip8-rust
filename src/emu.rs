@@ -27,8 +27,10 @@ pub struct Emulator {
     pub timer_acc: Duration,
     pub sys_time: SystemTime,
     pub paused: bool,
+    pub step: usize,
     pub closing: bool,
     pub debug_print: bool,
+    pub rom: Vec<u8>,
 }
 
 impl Emulator {
@@ -49,9 +51,20 @@ impl Emulator {
             timer_acc: Duration::from_secs(0),
             sys_time: SystemTime::now(),
             paused: false,
+            step: 0,
             closing: false,
             debug_print: false,
+            rom: Vec::new(),
         })
+    }
+
+    pub fn reset(&mut self) -> anyhow::Result<()> {
+        self.cpu.reset();
+        self.cpu.load_rom(&self.rom)?;
+        self.timer_acc = Duration::from_secs(0);
+        self.sys_time = SystemTime::now();
+
+        Ok(())
     }
 
     pub fn step(&mut self) -> anyhow::Result<()> {
@@ -63,7 +76,11 @@ impl Emulator {
             self.read_inputs()?;
         }
 
-        if !self.paused && !self.closing {
+        if (!self.paused || self.step > 0) && !self.closing {
+            if self.step > 0 {
+                self.step -= 1;
+            }
+
             if self.debug_print {
                 println!("{}", self.cpu.status());
             }
@@ -108,6 +125,12 @@ impl Emulator {
                     Key::Escape => {
                         self.quit();
                     }
+                    Key::F1 => {
+                        self.reset()?;
+                    }
+                    Key::F2 => {
+                        self.debug_print = !self.debug_print;
+                    }
                     Key::Space => {
                         if self.paused {
                             self.unpause();
@@ -117,7 +140,7 @@ impl Emulator {
                     }
                     Key::Enter => {
                         self.pause();
-                        self.cpu_step()?;
+                        self.step += 1;
                     }
 
                     _ => {}
