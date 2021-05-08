@@ -197,5 +197,16 @@ fn default_key_map() -> HashMap<Key, u8> {
     key_map.insert(Key::F, 0xE);
     key_map.insert(Key::V, 0xF);
 
+    key_map.insert(Key::NumPad0, 0x0);
+    key_map.insert(Key::NumPad1, 0x1);
+    key_map.insert(Key::NumPad2, 0x2);
+    key_map.insert(Key::NumPad3, 0x3);
+    key_map.insert(Key::NumPad4, 0x4);
+    key_map.insert(Key::NumPad5, 0x5);
+    key_map.insert(Key::NumPad6, 0x6);
+    key_map.insert(Key::NumPad7, 0x7);
+    key_map.insert(Key::NumPad8, 0x8);
+    key_map.insert(Key::NumPad9, 0x9);
+
     key_map
 }
