@@ -1,6 +1,7 @@
 mod chip8;
 mod disasm;
 mod emu;
+mod palette;
 mod window;
 
 use std::{fs::File, io::Read, path::PathBuf, time::Duration};
@@ -18,6 +19,9 @@ struct Opt {
 
     #[structopt(short, long, help = "Clock speed (Hz)")]
     clock: Option<f64>,
+
+    #[structopt(short, long, default_value = "0", help = "Color Palette")]
+    palette: usize,
 
     #[structopt(short, long, help = "Disassemble program and exit")]
     disassemble: bool,
@@ -37,6 +41,8 @@ fn main() -> anyhow::Result<()> {
         let mut emu = Emulator::new()?;
 
         emu.debug_print = opt.verbose;
+
+        emu.set_palette(palette::builtin(opt.palette));
 
         if let Some(clock) = opt.clock {
             emu.clock_period = if clock > 0. {

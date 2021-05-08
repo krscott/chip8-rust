@@ -6,14 +6,15 @@ use std::{
 
 use crate::{
     chip8::{self, Chip8},
+    palette,
     window::{self, WindowHandle},
 };
 use minifb::Key;
 
-const COLOR_ON: u32 = u32::MAX;
-const COLOR_OFF: u32 = 0;
+const TITLE: &str = "Rust CHIP-8 Emulator";
 
-const TITLE: &str = "Chip8 Rust Emulator";
+const DEFAULT_COLOR_ON: u32 = u32::MAX;
+const DEFAULT_COLOR_OFF: u32 = 0;
 
 const DEFAULT_CLOCK_PERIOD_S: f64 = 1. / 1000.;
 const DEFAULT_TIMER_PERIOD_S: f64 = 1. / 60.;
@@ -31,6 +32,9 @@ pub struct Emulator {
     pub closing: bool,
     pub debug_print: bool,
     pub rom: Vec<u8>,
+    pub color_on: u32,
+    pub color_off: u32,
+    pub palette_index: usize,
 }
 
 impl Emulator {
@@ -55,7 +59,22 @@ impl Emulator {
             closing: false,
             debug_print: false,
             rom: Vec::new(),
+            color_on: DEFAULT_COLOR_ON,
+            color_off: DEFAULT_COLOR_OFF,
+            palette_index: 0,
         })
+    }
+
+    pub fn set_palette(&mut self, p: (u32, u32)) {
+        let (off, on) = p;
+        self.color_off = off;
+        self.color_on = on;
+        self.update_window();
+    }
+
+    pub fn rotate_palette(&mut self) {
+        self.palette_index = (self.palette_index + 1) % palette::BUILTIN_PALETTES.len();
+        self.set_palette(palette::builtin(self.palette_index));
     }
 
     pub fn reset(&mut self) -> anyhow::Result<()> {
@@ -131,6 +150,9 @@ impl Emulator {
                     Key::F2 => {
                         self.debug_print = !self.debug_print;
                     }
+                    Key::F3 => {
+                        self.rotate_palette();
+                    }
                     Key::Space => {
                         if self.paused {
                             self.unpause();
@@ -194,8 +216,8 @@ impl Emulator {
             .enumerate()
         {
             *b = match self.cpu.display[i] {
-                true => COLOR_ON,
-                false => COLOR_OFF,
+                true => self.color_on,
+                false => self.color_off,
             };
         }
     }
