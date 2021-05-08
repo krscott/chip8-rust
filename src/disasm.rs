@@ -1,3 +1,5 @@
+use crate::chip8::split_opcode2;
+
 // Hex bytes
 
 pub fn disassemble(rom: &[u8], offset: u16) -> Vec<String> {
@@ -11,7 +13,7 @@ pub fn disassemble(rom: &[u8], offset: u16) -> Vec<String> {
                 .join(" ");
 
             let mnemonic = if opcode.len() == 2 {
-                match split_opcode(opcode[0], opcode[1]) {
+                match split_opcode2(opcode[0], opcode[1]) {
                     (0x0, 0x0, 0xE, 0x0) => format!("CLS"),
                     (0x0, 0x0, 0xE, 0xE) => format!("RET"),
                     (0x0, x, y, z) => format!("SYS {:X}{:X}{:X}", x, y, z),
@@ -56,8 +58,4 @@ pub fn disassemble(rom: &[u8], offset: u16) -> Vec<String> {
             format!("{:04X}: {}  {}", i + usize::from(offset), op_hex, mnemonic)
         })
         .collect()
-}
-
-fn split_opcode(hi: u8, lo: u8) -> (u8, u8, u8, u8) {
-    ((hi & 0xf0) >> 4, hi & 0x0f, (lo & 0xf0) >> 4, lo & 0x0f)
 }

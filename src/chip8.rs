@@ -200,55 +200,46 @@ impl Chip8 {
         }
     }
 
+    fn v<T: Into<usize>>(&mut self, x: T) -> &mut u8 {
+        &mut self.v[x.into()]
+    }
+
     fn execute_opcode(&mut self, opcode: u16) -> Result<(), Chip8Panic> {
-        let upper_nibble = (opcode & 0xf000) >> 12;
         let nnn = opcode & 0x0fff;
-        let x = usize::from((opcode & 0x0f00) >> 8);
-        let y = usize::from((opcode & 0x00f0) >> 4);
         let kk = (opcode & 0x00ff) as u8;
-        let nibble = opcode & 0x000f;
 
-        // Compatibility modes
-        let xy = x;
-        // let xy = y;
+        match split_opcode(opcode) {
+            (0x0, 0x0, 0xE, 0x0) => {
+                // CLS: Clear the display
 
-        match upper_nibble {
-            0x0 => {
-                if opcode == 0x00E0 {
-                    // CLS: Clear the display
+                fill_array(&mut self.display, false);
+                self.display_dirty = true;
 
-                    fill_array(&mut self.display, false);
-                    self.display_dirty = true;
+                self.pc += 2;
 
+                Ok(())
+            }
+            (0x0, 0x0, 0xE, 0xE) => {
+                // RET: Return from a subroutine
+
+                if self.sp == 0 {
+                    Err(Chip8Panic::StackUnderflow)
+                } else {
+                    self.pc = self.stack[usize::from(self.sp)];
+                    self.sp -= 1;
                     self.pc += 2;
 
                     Ok(())
-                } else if opcode == 0x00EE {
-                    // RET: Return from a subroutine
-
-                    if self.sp == 0 {
-                        Err(Chip8Panic::StackUnderflow)
-                    } else {
-                        self.pc = self.stack[usize::from(self.sp)];
-                        self.sp -= 1;
-                        self.pc += 2;
-
-                        Ok(())
-                    }
-                } else {
-                    Err(Chip8Panic::UnknownOpCode)
                 }
             }
-
-            0x1 => {
+            (0x1, _x, _y, _z) => {
                 // JP addr: Jump to address
 
                 self.pc = nnn;
 
                 Ok(())
             }
-
-            0x2 => {
+            (0x2, _x, _y, _z) => {
                 // CALL addr: Call subroutine at address
 
                 if self.sp >= 0xff {
@@ -261,11 +252,10 @@ impl Chip8 {
                     Ok(())
                 }
             }
-
-            0x3 => {
+            (0x3, x, _y, _z) => {
                 // SE Vx, kk: Skip next instruction if Vx = kk
 
-                if self.v[x] == kk {
+                if *self.v(x) == kk {
                     self.pc += 4;
                 } else {
                     self.pc += 2;
@@ -273,11 +263,10 @@ impl Chip8 {
 
                 Ok(())
             }
-
-            0x4 => {
+            (0x4, x, _y, _z) => {
                 // SNE Vx, kk: Skip next instruction if Vx != kk
 
-                if self.v[x] != kk {
+                if *self.v(x) != kk {
                     self.pc += 4;
                 } else {
                     self.pc += 2;
@@ -285,145 +274,121 @@ impl Chip8 {
 
                 Ok(())
             }
-
-            0x5 => {
-                if nibble == 0 {
-                    // SE Vx, Vy: Skip next instruction if Vx == Vy
-                    if self.v[x] == self.v[y] {
-                        self.pc += 4;
-                    } else {
-                        self.pc += 2;
-                    }
-
-                    Ok(())
+            (0x5, x, y, 0x0) => {
+                // SE Vx, Vy: Skip next instruction if Vx == Vy
+                if *self.v(x) == *self.v(y) {
+                    self.pc += 4;
                 } else {
-                    Err(Chip8Panic::UnknownOpCode)
+                    self.pc += 2;
                 }
-            }
 
-            0x6 => {
+                Ok(())
+            }
+            (0x6, x, _y, _z) => {
                 // LD Vx, kk: Vx = kk
 
-                self.v[x] = kk;
+                *self.v(x) = kk;
                 self.pc += 2;
 
                 Ok(())
             }
-
-            0x7 => {
+            (0x7, x, _y, _z) => {
                 // ADD Vx, kk: Vx = Vx + kk
 
-                self.v[x] = self.v[x].wrapping_add(kk);
+                *self.v(x) = (*self.v(x)).wrapping_add(kk);
                 self.pc += 2;
 
                 Ok(())
             }
-
-            0x8 => {
-                match nibble {
-                    0x0 => {
-                        // LD Vx, Vy: Set Vx = Vy
-                        self.v[x] = self.v[y];
-                        self.pc += 2;
-                        Ok(())
-                    }
-
-                    0x1 => {
-                        // OR Vx, Vy: Set Vx = Vx OR Vy
-                        self.v[x] = self.v[x] | self.v[y];
-                        self.pc += 2;
-                        Ok(())
-                    }
-
-                    0x2 => {
-                        // AND Vx, Vy: Set Vx = Vx AND Vy
-                        self.v[x] = self.v[x] & self.v[y];
-                        self.pc += 2;
-                        Ok(())
-                    }
-
-                    0x3 => {
-                        // XOR Vx, Vy: Set Vx = Vx XOR Vy
-                        self.v[x] = self.v[x] ^ self.v[y];
-                        self.pc += 2;
-                        Ok(())
-                    }
-
-                    0x4 => {
-                        // ADD Vx, Vy: Set Vx = Vx + Vy, set VF = carry
-                        let (sum, ovf) = self.v[x].overflowing_add(self.v[y]);
-                        self.v[0xf] = if ovf { 1 } else { 0 };
-                        self.v[x] = sum;
-
-                        self.pc += 2;
-                        Ok(())
-                    }
-
-                    0x5 => {
-                        // SUB Vx, Vy: Set Vx = Vx - Vy, set VF = NOT borrow
-
-                        // Note: VF is assigned first, so it could change Vx - Vy if x or y is F
-                        // If this doesn't matter, then we could use overflowing_sub() instead
-                        self.v[0xf] = if self.v[x] > self.v[y] { 1 } else { 0 };
-                        self.v[x] = self.v[x].wrapping_sub(self.v[y]);
-
-                        self.pc += 2;
-                        Ok(())
-                    }
-
-                    0x6 => {
-                        // SHR Vx|Vy: Set Vx = Vx >> 1, set VF = shifted-out bit
-
-                        self.v[0xf] = self.v[xy] & 1;
-                        self.v[x] = self.v[xy] >> 1;
-
-                        self.pc += 2;
-                        Ok(())
-                    }
-
-                    0x7 => {
-                        // SUBN Vx, Vy: Set Vx = Vy - Vx, set VF = NOT borrow
-
-                        // Note: VF is assigned first, so it could change Vx - Vy if x or y is F
-                        // If this doesn't matter, then we could use overflowing_sub() instead
-                        self.v[0xf] = if self.v[y] > self.v[x] { 1 } else { 0 };
-                        self.v[x] = self.v[y].wrapping_sub(self.v[x]);
-
-                        self.pc += 2;
-                        Ok(())
-                    }
-
-                    0xE => {
-                        // SHL Vx|Vy: Set Vx = Vx << 1, set VF = shifted-out bit
-
-                        self.v[0xf] = if self.v[xy] & 0x80 == 0 { 0 } else { 1 };
-                        self.v[x] = self.v[xy] << 1;
-
-                        self.pc += 2;
-                        Ok(())
-                    }
-
-                    _ => Err(Chip8Panic::UnknownOpCode),
-                }
+            (0x8, x, y, 0x0) => {
+                // LD Vx, Vy: Set Vx = Vy
+                *self.v(x) = *self.v(y);
+                self.pc += 2;
+                Ok(())
             }
+            (0x8, x, y, 0x1) => {
+                // OR Vx, Vy: Set Vx = Vx OR Vy
+                *self.v(x) = *self.v(x) | *self.v(y);
+                self.pc += 2;
+                Ok(())
+            }
+            (0x8, x, y, 0x2) => {
+                // AND Vx, Vy: Set Vx = Vx AND Vy
+                *self.v(x) = *self.v(x) & *self.v(y);
+                self.pc += 2;
+                Ok(())
+            }
+            (0x8, x, y, 0x3) => {
+                // XOR Vx, Vy: Set Vx = Vx XOR Vy
+                *self.v(x) = *self.v(x) ^ *self.v(y);
+                self.pc += 2;
+                Ok(())
+            }
+            (0x8, x, y, 0x4) => {
+                // ADD Vx, Vy: Set Vx = Vx + Vy, set VF = carry
+                let (sum, ovf) = (*self.v(x)).overflowing_add(*self.v(y));
+                self.v[0xf] = if ovf { 1 } else { 0 };
+                *self.v(x) = sum;
 
-            0x9 => {
-                if nibble == 0 {
-                    // SNE Vx, Vy: Skip next instruction if Vx != Vy
+                self.pc += 2;
+                Ok(())
+            }
+            (0x8, x, y, 0x5) => {
+                // SUB Vx, Vy: Set Vx = Vx - Vy, set VF = NOT borrow
 
-                    if self.v[x] != self.v[y] {
-                        self.pc += 4;
-                    } else {
-                        self.pc += 2;
-                    }
+                // Note: VF is assigned first, so it could change Vx - Vy if x or y is F
+                // If this doesn't matter, then we could use overflowing_sub() instead
+                self.v[0xf] = if *self.v(x) > *self.v(y) { 1 } else { 0 };
+                *self.v(x) = (*self.v(x)).wrapping_sub(*self.v(y));
 
-                    Ok(())
+                self.pc += 2;
+                Ok(())
+            }
+            (0x8, x, _y, 0x6) => {
+                // SHR Vx|Vy: Set Vx = Vx >> 1, set VF = shifted-out bit
+
+                // Compatibility note: Some machines may use Vx = Vy >> 1
+
+                self.v[0xf] = *self.v(x) & 1;
+                *self.v(x) = *self.v(x) >> 1;
+
+                self.pc += 2;
+                Ok(())
+            }
+            (0x8, x, y, 0x7) => {
+                // SUBN Vx, Vy: Set Vx = Vy - Vx, set VF = NOT borrow
+
+                // Note: VF is assigned first, so it could change Vx - Vy if x or y is F
+                // If this doesn't matter, then we could use overflowing_sub() instead
+                self.v[0xf] = if *self.v(y) > *self.v(x) { 1 } else { 0 };
+                *self.v(x) = (*self.v(y)).wrapping_sub(*self.v(x));
+
+                self.pc += 2;
+                Ok(())
+            }
+            (0x8, x, _y, 0xE) => {
+                // SHL Vx|Vy: Set Vx = Vx << 1, set VF = shifted-out bit
+
+                // Compatibility note: Some machines may use Vx = Vy << 1
+
+                self.v[0xf] = if *self.v(x) & 0x80 == 0 { 0 } else { 1 };
+                *self.v(x) = *self.v(x) << 1;
+
+                self.pc += 2;
+                Ok(())
+            }
+            (0x9, x, y, 0x0) => {
+                // SNE Vx, Vy: Skip next instruction if Vx != Vy
+
+                if *self.v(x) != *self.v(y) {
+                    self.pc += 4;
                 } else {
-                    Err(Chip8Panic::UnknownOpCode)
+                    self.pc += 2;
                 }
-            }
 
-            0xA => {
+                Ok(())
+            }
+            (0xA, _x, _y, _z) => {
                 // LD I, addr: Set I = nnn
 
                 self.i = nnn;
@@ -431,36 +396,33 @@ impl Chip8 {
 
                 Ok(())
             }
-
-            0xB => {
+            (0xB, _x, _y, _z) => {
                 // JP V0, addr: Jump to location nnn + V0
 
                 self.pc = u16::from(self.v[0]) + nnn;
 
                 Ok(())
             }
-
-            0xC => {
+            (0xC, x, _y, _z) => {
                 // RND Vx, kk: Random byte AND kk
 
-                self.v[x] = kk & ((self.rng.next_u32() & 0xff) as u8);
+                *self.v(x) = kk & ((self.rng.next_u32() & 0xff) as u8);
                 self.pc += 2;
 
                 Ok(())
             }
-
-            0xD => {
+            (0xD, x, y, z) => {
                 // DRW Vx, Vy, nibble:
                 // Display n-byte sprite starting at memory location I at (Vx, Vy),
                 // set VF = collision.
 
-                let vx = usize::from(self.v[x]);
-                let vy = usize::from(self.v[y]);
+                let vx = usize::from(*self.v(x));
+                let vy = usize::from(*self.v(y));
                 let i = usize::from(self.i);
 
                 self.v[0xf] = 0;
 
-                for dy in 0..nibble {
+                for dy in 0..z {
                     let dy = usize::from(dy);
 
                     self.disp_toggle_sprite_row(vx, vy + dy, self.ram[i + dy]);
@@ -470,162 +432,139 @@ impl Chip8 {
 
                 Ok(())
             }
-
-            0xE => {
-                let key_idx = usize::from(self.v[x] & 0xf);
+            (0xE, x, 0x9, 0xE) => {
+                // SKP Vx: Skip next instruction if key with value of Vx is pressed
+                let key_idx = usize::from(*self.v(x) & 0xf);
                 let key_pressed = self.keys[key_idx];
 
-                match kk {
-                    0x9E => {
-                        // SKP Vx: Skip next instruction if key with value of Vx is pressed
-
-                        if key_pressed {
-                            self.pc += 4;
-                        } else {
-                            self.pc += 2;
-                        }
-
-                        Ok(())
-                    }
-
-                    0xA1 => {
-                        // SKNP Vx: Skip next instruction if key with value of Vx is not pressed
-
-                        if !key_pressed {
-                            self.pc += 4;
-                        } else {
-                            self.pc += 2;
-                        }
-
-                        Ok(())
-                    }
-
-                    _ => Err(Chip8Panic::UnknownOpCode),
+                if key_pressed {
+                    self.pc += 4;
+                } else {
+                    self.pc += 2;
                 }
+
+                Ok(())
             }
+            (0xE, x, 0xA, 0x1) => {
+                // SKNP Vx: Skip next instruction if key with value of Vx is not pressed
+                let key_idx = usize::from(*self.v(x) & 0xf);
+                let key_pressed = self.keys[key_idx];
 
-            0xF => {
-                match kk {
-                    0x07 => {
-                        // LD Vx, DT: set Vx = DT
-
-                        self.v[x] = self.dt;
-
-                        self.pc += 2;
-
-                        Ok(())
-                    }
-
-                    0x0A => {
-                        // LD Vx, K: Wait for a key press, store value of key in Vx
-
-                        let key_pressed = self
-                            .keys
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, is_pressed)| **is_pressed)
-                            .map(|(i, _)| i)
-                            .next();
-
-                        if let Some(key_pressed) = key_pressed {
-                            self.v[x] = key_pressed as u8;
-                            self.pc += 2;
-                        }
-
-                        Ok(())
-                    }
-
-                    0x15 => {
-                        // LD DT, Vx: Set DT = Vx
-
-                        self.dt = self.v[x];
-
-                        self.pc += 2;
-
-                        Ok(())
-                    }
-
-                    0x18 => {
-                        // LD ST, Vx: Set ST = Vx
-
-                        self.st = self.v[x];
-
-                        self.pc += 2;
-
-                        Ok(())
-                    }
-
-                    0x1E => {
-                        // ADD I, Vx: Set I = I + Vx
-
-                        self.i += u16::from(self.v[x]);
-
-                        self.pc += 2;
-
-                        Ok(())
-                    }
-
-                    0x29 => {
-                        // LD F, Vx: Set I = location of sprite for digit Vx
-
-                        let char = u16::from(self.v[x] & 0x0f);
-
-                        self.i = ADDR_CHARACTER + SIZE_CHARACTER * char;
-
-                        self.pc += 2;
-
-                        Ok(())
-                    }
-
-                    0x33 => {
-                        // LD B, Vx: Store BCD repr of Vx in mem locations I, I+1, I+2
-
-                        let i = usize::from(self.i);
-                        let vx = self.v[x];
-
-                        let hundreds = vx / 100 % 10;
-                        let tens = vx / 10 % 10;
-                        let ones = vx / 1 % 10;
-
-                        self.ram[i] = hundreds;
-                        self.ram[i + 1] = tens;
-                        self.ram[i + 2] = ones;
-
-                        self.pc += 2;
-
-                        Ok(())
-                    }
-
-                    0x55 => {
-                        // LD [I], Vx: Store registers V0 through Vx in memory starting at I
-
-                        for di in 0_usize..=usize::from(x) {
-                            let addr = (usize::from(self.i) + di) % self.ram.len();
-                            self.ram[addr] = self.v[di];
-                        }
-
-                        self.pc += 2;
-
-                        Ok(())
-                    }
-
-                    0x65 => {
-                        // LD Vx, [I]: Read registers V0 through Vx from memory starting at I
-
-                        for di in 0_usize..=usize::from(x) {
-                            let addr = (usize::from(self.i) + di) % self.ram.len();
-                            self.v[di] = self.ram[addr];
-                        }
-
-                        self.pc += 2;
-
-                        Ok(())
-                    }
-
-                    _ => Err(Chip8Panic::UnknownOpCode),
+                if !key_pressed {
+                    self.pc += 4;
+                } else {
+                    self.pc += 2;
                 }
-            }
 
+                Ok(())
+            }
+            (0xF, x, 0x0, 0x7) => {
+                // LD Vx, DT: set Vx = DT
+
+                *self.v(x) = self.dt;
+
+                self.pc += 2;
+
+                Ok(())
+            }
+            (0xF, x, 0x0, 0xA) => {
+                // LD Vx, K: Wait for a key press, store value of key in Vx
+
+                let key_pressed = self
+                    .keys
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, is_pressed)| **is_pressed)
+                    .map(|(i, _)| i)
+                    .next();
+
+                if let Some(key_pressed) = key_pressed {
+                    *self.v(x) = key_pressed as u8;
+                    self.pc += 2;
+                }
+
+                Ok(())
+            }
+            (0xF, x, 0x1, 0x5) => {
+                // LD DT, Vx: Set DT = Vx
+
+                self.dt = *self.v(x);
+
+                self.pc += 2;
+
+                Ok(())
+            }
+            (0xF, x, 0x1, 0x8) => {
+                // LD ST, Vx: Set ST = Vx
+
+                self.st = *self.v(x);
+
+                self.pc += 2;
+
+                Ok(())
+            }
+            (0xF, x, 0x1, 0xE) => {
+                // ADD I, Vx: Set I = I + Vx
+
+                self.i += u16::from(*self.v(x));
+
+                self.pc += 2;
+
+                Ok(())
+            }
+            (0xF, x, 0x2, 0x9) => {
+                // LD F, Vx: Set I = location of sprite for digit Vx
+
+                let char = u16::from(*self.v(x) & 0x0f);
+
+                self.i = ADDR_CHARACTER + SIZE_CHARACTER * char;
+
+                self.pc += 2;
+
+                Ok(())
+            }
+            (0xF, x, 0x3, 0x3) => {
+                // LD B, Vx: Store BCD repr of Vx in mem locations I, I+1, I+2
+
+                let i = usize::from(self.i);
+                let vx = *self.v(x);
+
+                let hundreds = vx / 100 % 10;
+                let tens = vx / 10 % 10;
+                let ones = vx / 1 % 10;
+
+                self.ram[i] = hundreds;
+                self.ram[i + 1] = tens;
+                self.ram[i + 2] = ones;
+
+                self.pc += 2;
+
+                Ok(())
+            }
+            (0xF, x, 0x5, 0x5) => {
+                // LD [I], Vx: Store registers V0 through Vx in memory starting at I
+
+                for di in 0_usize..=usize::from(x) {
+                    let addr = (usize::from(self.i) + di) % self.ram.len();
+                    self.ram[addr] = self.v[di];
+                }
+
+                self.pc += 2;
+
+                Ok(())
+            }
+            (0xF, x, 0x6, 0x5) => {
+                // LD Vx, [I]: Read registers V0 through Vx from memory starting at I
+
+                for di in 0_usize..=usize::from(x) {
+                    let addr = (usize::from(self.i) + di) % self.ram.len();
+                    self.v[di] = self.ram[addr];
+                }
+
+                self.pc += 2;
+
+                Ok(())
+            }
             _ => Err(Chip8Panic::UnknownOpCode),
         }
     }
@@ -661,7 +600,7 @@ impl Chip8 {
         let msb: u16 = self.mem_read_byte(addr).into();
         let lsb: u16 = self.mem_read_byte(addr + 1).into();
 
-        msb << 8 | lsb
+        (msb << 8) | lsb
     }
 
     pub fn load_rom(&mut self, data: &[u8]) -> anyhow::Result<()> {
@@ -699,4 +638,14 @@ fn fill_array<T: Copy>(a: &mut [T], val: T) {
     for x in a.iter_mut() {
         *x = val;
     }
+}
+
+pub fn split_opcode(op: u16) -> (u8, u8, u8, u8) {
+    let hi = (op >> 8) as u8;
+    let lo = op as u8;
+    split_opcode2(hi, lo)
+}
+
+pub fn split_opcode2(hi: u8, lo: u8) -> (u8, u8, u8, u8) {
+    ((hi & 0xf0) >> 4, hi & 0x0f, (lo & 0xf0) >> 4, lo & 0x0f)
 }
