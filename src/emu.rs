@@ -188,14 +188,15 @@ impl Emulator {
             Err(e) => {
                 match e {
                     chip8::Chip8Panic::StackUnderflow => {
-                        println!("Error: Stack Overflow");
+                        println!("Error: Stack Overflow at {:04X}", self.cpu.pc);
                     }
                     chip8::Chip8Panic::StackOverflow => {
-                        println!("Error: Stack Overflow");
+                        println!("Error: Stack Overflow at {:04X}", self.cpu.pc);
                     }
                     chip8::Chip8Panic::UnknownOpCode => {
                         println!(
-                            "Error: Unknown opcode {:#04x}",
+                            "Error: Unknown opcode at {:04X}: {:04X}",
+                            self.cpu.pc,
                             self.cpu.mem_read_opcode(self.cpu.pc)
                         );
                     }
