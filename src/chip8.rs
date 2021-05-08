@@ -137,11 +137,12 @@ impl Chip8 {
             .join(" ");
 
         format!(
-            "{:04X}: {:04X} I={:04X} Vx=[{}]",
+            "{:04X}: {:04X} I={:04X} Vx=[{}] DT={:02X}",
             self.pc,
             self.mem_read_opcode(self.pc),
             self.i,
-            vx_str
+            vx_str,
+            self.dt
         )
     }
 

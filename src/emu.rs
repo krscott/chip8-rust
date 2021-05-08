@@ -14,13 +14,11 @@ const COLOR_OFF: u32 = 0;
 
 const TITLE: &str = "Chip8 Rust Emulator";
 
-const DEFAULT_CLOCK_S: f64 = 1. / 100_000.;
-
 pub struct Emulator {
     pub cpu: Chip8,
     pub window_handle: WindowHandle,
     pub key_map: HashMap<Key, u8>,
-    pub clock_period: Duration,
+    pub clock_period: Option<Duration>,
     pub timer_time: SystemTime,
     pub paused: bool,
     pub closing: bool,
@@ -40,7 +38,7 @@ impl Emulator {
             cpu,
             window_handle,
             key_map: default_key_map(),
-            clock_period: Duration::from_secs_f64(DEFAULT_CLOCK_S),
+            clock_period: None,
             timer_time: SystemTime::now(),
             paused: false,
             closing: false,
@@ -75,7 +73,9 @@ impl Emulator {
             self.cpu.timer_tick();
         }
 
-        spin_sleep::sleep(self.clock_period);
+        if let Some(period) = self.clock_period {
+            spin_sleep::sleep(period);
+        }
 
         Ok(())
     }
