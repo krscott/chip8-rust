@@ -104,7 +104,7 @@ pub fn spawn(title: String, width: usize, height: usize) -> WindowHandle {
 
         while !*shared_data.closing.lock().unwrap() && window.is_open() {
             if *shared_data.display_dirty.lock().unwrap() {
-                let buffer = shared_data.display_buffer.lock().unwrap();
+                let buffer = shared_data.display_buffer.lock().unwrap().clone();
                 window.update_with_buffer(&buffer, width, height).unwrap();
             } else {
                 window.update();

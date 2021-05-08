@@ -38,7 +38,7 @@ impl Emulator {
             cpu,
             window_handle,
             key_map: default_key_map(),
-            clock_period: None,
+            clock_period: Some(Duration::from_secs_f64(1. / 1000.)),
             timer_time: SystemTime::now(),
             paused: false,
             closing: false,

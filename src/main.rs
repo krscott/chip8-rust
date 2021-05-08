@@ -39,7 +39,11 @@ fn main() -> anyhow::Result<()> {
         emu.debug_print = opt.verbose;
 
         if let Some(clock) = opt.clock {
-            emu.clock_period = Some(Duration::from_secs_f64(1. / clock));
+            emu.clock_period = if clock > 0. {
+                Some(Duration::from_secs_f64(1. / clock))
+            } else {
+                None
+            };
         }
 
         emu.cpu.load_rom(&program_rom)?;
