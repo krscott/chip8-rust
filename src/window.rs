@@ -16,23 +16,12 @@ pub struct WindowHandle {
     keys: Arc<Mutex<Option<Vec<Key>>>>,
     keys_pressed: Arc<Mutex<Option<HashSet<Key>>>>,
     title_update: Arc<Mutex<Option<String>>>,
-    updated: Arc<Mutex<bool>>,
     closing: Arc<Mutex<bool>>,
 }
 
 impl WindowHandle {
     pub fn is_closing(&self) -> bool {
         *self.closing.lock().unwrap()
-    }
-
-    pub fn take_updated(&self) -> bool {
-        let mut updated = self.updated.lock().unwrap();
-        if *updated {
-            *updated = false;
-            true
-        } else {
-            false
-        }
     }
 
     pub fn get_keys(&self) -> Option<Vec<Key>> {
@@ -67,7 +56,6 @@ struct WindowSharedData {
     keys: Arc<Mutex<Option<Vec<Key>>>>,
     keys_pressed: Arc<Mutex<Option<HashSet<Key>>>>,
     title_update: Arc<Mutex<Option<String>>>,
-    updated: Arc<Mutex<bool>>,
     closing: Arc<Mutex<bool>>,
 }
 
@@ -77,7 +65,6 @@ pub fn spawn(title: String, width: usize, height: usize) -> WindowHandle {
     let keys = Arc::new(Mutex::new(None));
     let keys_pressed = Arc::new(Mutex::new(None));
     let title_update = Arc::new(Mutex::new(None));
-    let updated = Arc::new(Mutex::new(false));
     let closing = Arc::new(Mutex::new(false));
 
     let shared_data = WindowSharedData {
@@ -86,7 +73,6 @@ pub fn spawn(title: String, width: usize, height: usize) -> WindowHandle {
         keys: keys.clone(),
         keys_pressed: keys_pressed.clone(),
         title_update: title_update.clone(),
-        updated: updated.clone(),
         closing: closing.clone(),
     };
 
@@ -137,8 +123,6 @@ pub fn spawn(title: String, width: usize, height: usize) -> WindowHandle {
             if let Some(new_title) = shared_data.title_update.lock().unwrap().take() {
                 window.set_title(&new_title);
             }
-
-            *shared_data.updated.lock().unwrap() = true;
         }
 
         *shared_data.closing.lock().unwrap() = true;
@@ -151,7 +135,6 @@ pub fn spawn(title: String, width: usize, height: usize) -> WindowHandle {
         keys,
         keys_pressed,
         title_update,
-        updated,
         closing,
     }
 }

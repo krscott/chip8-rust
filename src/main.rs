@@ -40,9 +40,9 @@ fn main() -> anyhow::Result<()> {
 
         if let Some(clock) = opt.clock {
             emu.clock_period = if clock > 0. {
-                Some(Duration::from_secs_f64(1. / clock))
+                Duration::from_secs_f64(1. / clock)
             } else {
-                None
+                Duration::from_secs_f64(1e-9) // 1 GHz
             };
         }
 

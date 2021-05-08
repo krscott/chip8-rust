@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    time::{Duration, SystemTime},
-};
+use std::{collections::HashMap, time::Duration};
 
 use crate::{
     chip8::{self, Chip8},
@@ -14,12 +11,16 @@ const COLOR_OFF: u32 = 0;
 
 const TITLE: &str = "Chip8 Rust Emulator";
 
+const DEFAULT_CLOCK_PERIOD_S: f64 = 1. / 1000.;
+const DEFAULT_TIMER_PERIOD_S: f64 = 1. / 60.;
+
 pub struct Emulator {
     pub cpu: Chip8,
     pub window_handle: WindowHandle,
     pub key_map: HashMap<Key, u8>,
-    pub clock_period: Option<Duration>,
-    pub timer_time: SystemTime,
+    pub clock_period: Duration,
+    pub timer_period: Duration,
+    pub timer_acc: Duration,
     pub paused: bool,
     pub closing: bool,
     pub debug_print: bool,
@@ -38,8 +39,9 @@ impl Emulator {
             cpu,
             window_handle,
             key_map: default_key_map(),
-            clock_period: Some(Duration::from_secs_f64(1. / 1000.)),
-            timer_time: SystemTime::now(),
+            clock_period: Duration::from_secs_f64(DEFAULT_CLOCK_PERIOD_S),
+            timer_period: Duration::from_secs_f64(DEFAULT_TIMER_PERIOD_S),
+            timer_acc: Duration::from_secs(0),
             paused: false,
             closing: false,
             debug_print: false,
@@ -69,13 +71,14 @@ impl Emulator {
             self.update_window();
         }
 
-        if self.window_handle.take_updated() {
+        self.timer_acc += self.clock_period;
+
+        while self.timer_acc > self.timer_period {
+            self.timer_acc -= self.timer_period;
             self.cpu.timer_tick();
         }
 
-        if let Some(period) = self.clock_period {
-            spin_sleep::sleep(period);
-        }
+        spin_sleep::sleep(self.clock_period);
 
         Ok(())
     }
