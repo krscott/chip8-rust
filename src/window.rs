@@ -7,7 +7,7 @@ use std::{
 
 use minifb::{Key, Window, WindowOptions};
 
-const PERIOD_60HZ_US: u64 = 1_000_000 / 60;
+const REFRESH_PERIOD_S: f64 = 1. / 240.; // 240 Hz
 
 pub struct WindowHandle {
     join_handle: JoinHandle<()>,
@@ -86,7 +86,7 @@ pub fn spawn(title: String, width: usize, height: usize) -> WindowHandle {
 
         let mut window = Window::new(&title, width, height, opts).unwrap();
 
-        window.limit_update_rate(Some(Duration::from_micros(PERIOD_60HZ_US)));
+        window.limit_update_rate(Some(Duration::from_secs_f64(REFRESH_PERIOD_S)));
 
         while !*shared_data.closing.lock().unwrap() && window.is_open() {
             if *shared_data.display_dirty.lock().unwrap() {

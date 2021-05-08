@@ -1,4 +1,8 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::HashMap,
+    thread,
+    time::{Duration, SystemTime},
+};
 
 use crate::{
     chip8::{self, Chip8},
@@ -18,9 +22,10 @@ pub struct Emulator {
     pub cpu: Chip8,
     pub window_handle: WindowHandle,
     pub key_map: HashMap<Key, u8>,
-    pub clock_period: Duration,
+    pub clock_period: Option<Duration>,
     pub timer_period: Duration,
     pub timer_acc: Duration,
+    pub sys_time: SystemTime,
     pub paused: bool,
     pub closing: bool,
     pub debug_print: bool,
@@ -39,9 +44,10 @@ impl Emulator {
             cpu,
             window_handle,
             key_map: default_key_map(),
-            clock_period: Duration::from_secs_f64(DEFAULT_CLOCK_PERIOD_S),
+            clock_period: Some(Duration::from_secs_f64(DEFAULT_CLOCK_PERIOD_S)),
             timer_period: Duration::from_secs_f64(DEFAULT_TIMER_PERIOD_S),
             timer_acc: Duration::from_secs(0),
+            sys_time: SystemTime::now(),
             paused: false,
             closing: false,
             debug_print: false,
@@ -62,23 +68,34 @@ impl Emulator {
                 println!("{}", self.cpu.status());
             }
 
+            while self.timer_acc > self.timer_period {
+                self.timer_acc -= self.timer_period;
+                self.cpu.timer_tick();
+            }
+
             self.cpu_step()?;
+
+            match self.clock_period {
+                Some(clock_period) => {
+                    self.timer_acc += clock_period;
+                    spin_sleep::sleep(clock_period);
+                }
+
+                None => {
+                    self.timer_acc += self.sys_time.elapsed()?;
+                }
+            }
+        } else {
+            thread::sleep(Duration::from_micros(1));
         }
+
+        self.sys_time = SystemTime::now();
 
         if self.cpu.display_dirty {
             self.cpu.display_dirty = false;
 
             self.update_window();
         }
-
-        self.timer_acc += self.clock_period;
-
-        while self.timer_acc > self.timer_period {
-            self.timer_acc -= self.timer_period;
-            self.cpu.timer_tick();
-        }
-
-        spin_sleep::sleep(self.clock_period);
 
         Ok(())
     }
@@ -166,7 +183,7 @@ impl Emulator {
     }
 
     pub fn unpause(&mut self) {
-        self.paused = true;
+        self.paused = false;
         self.window_handle.set_title(TITLE.into());
     }
 
