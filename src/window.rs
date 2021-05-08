@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     sync::{Arc, Mutex, MutexGuard},
     thread::{self, JoinHandle},
     time::Duration,
@@ -13,7 +14,7 @@ pub struct WindowHandle {
     display_buffer: Arc<Mutex<Vec<u32>>>,
     display_dirty: Arc<Mutex<bool>>,
     keys: Arc<Mutex<Option<Vec<Key>>>>,
-    keys_pressed: Arc<Mutex<Option<Vec<Key>>>>,
+    keys_pressed: Arc<Mutex<Option<HashSet<Key>>>>,
     title_update: Arc<Mutex<Option<String>>>,
     updated: Arc<Mutex<bool>>,
     closing: Arc<Mutex<bool>>,
@@ -38,7 +39,7 @@ impl WindowHandle {
         self.keys.lock().unwrap().clone()
     }
 
-    pub fn get_keys_pressed(&self) -> Option<Vec<Key>> {
+    pub fn get_keys_pressed(&self) -> Option<HashSet<Key>> {
         self.keys_pressed.lock().unwrap().take()
     }
 
@@ -64,7 +65,7 @@ struct WindowSharedData {
     display_buffer: Arc<Mutex<Vec<u32>>>,
     display_dirty: Arc<Mutex<bool>>,
     keys: Arc<Mutex<Option<Vec<Key>>>>,
-    keys_pressed: Arc<Mutex<Option<Vec<Key>>>>,
+    keys_pressed: Arc<Mutex<Option<HashSet<Key>>>>,
     title_update: Arc<Mutex<Option<String>>>,
     updated: Arc<Mutex<bool>>,
     closing: Arc<Mutex<bool>>,
@@ -120,12 +121,16 @@ pub fn spawn(title: String, width: usize, height: usize) -> WindowHandle {
             }
 
             {
-                let mut keys_pressed = shared_data.keys_pressed.lock().unwrap();
-
                 if let Some(new_keys) = window.get_keys_pressed(minifb::KeyRepeat::Yes) {
-                    (*keys_pressed).replace(new_keys);
-                } else {
-                    (*keys_pressed).take();
+                    let mut keys_pressed_guard = shared_data.keys_pressed.lock().unwrap();
+
+                    let mut keys_pressed = keys_pressed_guard.take().unwrap_or_default();
+
+                    for key in new_keys {
+                        keys_pressed.insert(key);
+                    }
+
+                    (*keys_pressed_guard).replace(keys_pressed);
                 }
             }
 
